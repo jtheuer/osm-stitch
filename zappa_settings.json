@@ -1,0 +1,11 @@
+{
+    "production": {
+        "project_name": "osm-stitch",
+        "app_function": "osm-stitch.app",
+        "aws_region": "eu-west-1",
+        "s3_bucket": "devops.komoot.de",
+        "role_name": "osm-stitch-IamRoleLambda-1RL5MZTCOT2MI",
+        "manage_roles": false,
+        "keep_warm": false
+    }
+}

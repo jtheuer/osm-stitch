@@ -1,0 +1,207 @@
+<html>
+<head>
+    <title>OSM Stitch alpha</title>
+    <meta charset="utf-8"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.2.0/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.2.0/dist/leaflet.js"></script>
+    <script src="static/osmauth.js"></script>
+    <script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+
+    <style>
+        body {
+        font-family: verdana, helvetica, sans-serif;
+        font-size: 10pt;
+        }
+        #header {
+                position: absolute;
+                top:0;
+                right:0;
+                height:3em;
+                left: 0;
+                padding: 0.5em;
+        }
+        #start {
+            position: absolute;
+            top:5em;
+            right:1em;
+            bottom:1em;
+            left: 1em;
+            z-index: -1;
+            text-align: center;
+            vertical-align: middle;
+        }
+        #map {
+            position: absolute;
+            top:4em;
+            right:0;
+            bottom:0;
+            left: 0;
+        }
+        form span {
+            margin-left: 5px;
+            padding-left: 5px;
+            border-left: 1px solid grey;
+        }
+
+    </style>
+</head>
+<body>
+<div id="header">
+    <form>
+        <button id="new">Start new round</button>
+        <button id="editor" disabled>Open in ID editor</button>
+        <button id="quickfix" disabled>Accept solution</button>
+        <button id="nobug" disabled>This is not a bug</button>
+        <button id="next" disabled>Skip this bug</button>
+        <span id="user"></span>
+        <span id="status"></span>
+        <span id="changeset"></span>
+    </form>
+</div>
+<div id="start">Press "Start new round" ...</div>
+<div id="map" style="visibility: hidden"></div>
+<script>
+
+        var auth = osmAuth({
+            oauth_consumer_key: 'oFhymc8HqwdalBS6iNOTVEb7l8j5I30u7QtUjLzc',
+            oauth_secret: 'gmwTHR912fGp6Z7wZTPH3t7f01WzRf9gqI79X3QV',
+            auto: true
+        });
+
+        $.postJSON = function(url, data, success, dataType) {
+            if (typeof data != 'string') {
+                data = JSON.stringify(data);
+            }
+            $.ajax({
+                url : url,
+                type: "post",
+                data: data,
+                dataType: dataType || "json",
+                contentType: "application/json",
+                success: success
+            });
+        };
+		var map = L.map('map');
+		var osmUrl='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+	    var osmAttrib='Map data © <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, Bugs from <a href="https://keepright.at">keepright.at</a>';
+	    var osm = new L.TileLayer(osmUrl, {minZoom: 8, maxZoom: 19, attribution: osmAttrib});
+        osm.addTo(map);
+        var layers = L.layerGroup([]).addTo(map);
+
+        var data = [];
+        var data_index = 0;
+        var current_feature = null;
+
+        var geojsonMarkerOptions = {
+            radius: 8,
+            fillColor: "#880000",
+            color: "#000",
+            weight: 1,
+            opacity: 1,
+            fillOpacity: 0.2
+        };
+
+        var load_next = function() {
+
+            if(data_index >= data.length) {
+                return;
+            }
+            data_index++;
+            layers.clearLayers();
+            var nodeLayer = L.geoJson(data[data_index].node, {
+                pointToLayer: function (feature, latlng) {
+                    return L.circleMarker(latlng, geojsonMarkerOptions);
+                }
+            });
+            nodeLayer.addTo(layers);
+
+            if(data[data_index].suggested_fix != null) {
+                if(data[data_index].suggested_fix.geometry != null) {
+                    L.geoJson(data[data_index].suggested_fix.geometry, {
+                        'style': {
+                            'color': 'blue',
+                            'opacity': 0.3
+                        }
+                    }).addTo(layers);
+                }
+            }
+            $("#quickfix").attr("disabled", data[data_index].suggested_fix.payload == null);
+
+            current_feature = data[data_index];
+            map.fitBounds(nodeLayer.getBounds());
+            return false;
+        };
+
+        var load_new_dataset = function() {
+            // authenticate
+            auth.xhr({
+                method: 'GET',
+                path: '/api/0.6/user/details'
+            }, function(err, details) {
+                $("#map").css("visibility", "visible");
+                var user = details.firstElementChild.firstElementChild.getAttribute("display_name");
+                $("#user").html("logged in as <strong>"+ user + "</strong>");
+                layers.clearLayers();
+                $.get("fetch_data", function( _data ) {
+                    if('boundingbox' in _data) {
+                        var bbox = L.geoJson(_data.boundingbox, {
+                            'style': {
+                                'color': 'blue',
+                                'fillColor': 'blue',
+                                'fillOpacity': 0.3
+                            }
+                        });
+                        bbox.addTo(layers);
+                        map.fitBounds(bbox.getBounds(), {maxZoom: 3});
+                        bbox.bindTooltip("Loading openstreetmap bugs ...",{permanent: true, direction:"center"}).openTooltip()
+                    }
+                    $.postJSON("prepare_data", _data.features, function(_data) {
+                        data = _data;
+                        data_index = 0;
+                        load_next();
+                        $("#editor").attr("disabled", false);
+                        $("#next").attr("disabled", false);
+                        $("#nobug").attr("disabled", false);
+                        return false;
+                    });
+                });
+            });
+            return false;
+        };
+
+        // button click events
+        $("#new").click(load_new_dataset);
+        $("#editor").click(function() {
+            if(current_feature != null) {
+                var win = window.open('http://www.openstreetmap.org/edit?node=' + current_feature.node_id, '_blank');
+                win.focus();
+            }
+            return false;
+        });
+        $("#quickfix").click(function() {
+            $("#status").text("...");
+            var post_data = auth.get_token();
+            post_data.payload = current_feature.suggested_fix.payload;
+            $.postJSON("quickfix", post_data, function(result) {
+                if(result.status == "success") {
+                    var changeset = result.changeset;
+                    $("#status").text("saved!");
+                    $("#changeset").html("Edits saved in <a href='https://www.openstreetmap.org/changeset/" + changeset +"' target='_blank'>changeset " + changeset + "</a>");
+                    load_next();
+                } else if(result.status = 'already_fixed') {
+                    $("#status").text("already fixed");
+                    load_next();
+                } else {
+                    $("#status").text(result.error);
+                }
+            });
+            return false;
+        });
+        $("#next").click(load_next);
+        $("#nobug").click(load_next);
+
+        // load first dataset
+        load_new_dataset();
+</script>
+</body>
+</html>

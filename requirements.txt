@@ -1,0 +1,7 @@
+flask
+requests
+xmltodict
+haversine
+zappa
+oauth2
+
