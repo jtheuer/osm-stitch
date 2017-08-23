@@ -1,9 +1,7 @@
 # osm-stitch
-Fix disconntected paths in openstreetmap
+Fix disconntected paths in openstreetmap [Try it out online](https://25k7zw0ria.execute-api.eu-west-1.amazonaws.com/production/index.html) 
 
-Try it online: https://25k7zw0ria.execute-api.eu-west-1.amazonaws.com/production/index.html
+Openstreetmap Bug database by [keepright.at](https://www.keepright.at/)
 
-Bug database by https://www.keepright.at/
-
-Questions? Open an issue or send me message https://www.openstreetmap.org/message/new/frogger333
+Questions? Open a github issue or send me an [OpenStreetmap message](https://www.openstreetmap.org/message/new/frogger333)
 
