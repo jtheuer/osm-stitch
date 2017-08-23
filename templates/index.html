@@ -82,10 +82,15 @@
             });
         };
 		var map = L.map('map');
-		var osmUrl='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 	    var osmAttrib='Map data © <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, Bugs from <a href="https://keepright.at">keepright.at</a>';
-	    var osm = new L.TileLayer(osmUrl, {minZoom: 8, maxZoom: 19, attribution: osmAttrib});
+	    var osm = new L.TileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {minZoom: 8, maxZoom: 19, attribution: osmAttrib});
+	    var mapbox = new L.TileLayer('https://{s}.tiles.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}.webp?access_token=pk.eyJ1IjoiamFuMiIsImEiOiJjajZwMnllaXAwbnY3MnFudDd0ZGZsaGt4In0.xeCmFtDgXjKuVDc2KabPUQ', {minZoom: 8, maxZoom: 19, attribution: osmAttrib});
         osm.addTo(map);
+	    L.control.layers({
+	        "Map": osm,
+	        "Satellite (mapbox)": mapbox
+	    }).addTo(map);
+	    L.control.scale().addTo(map);
         var layers = L.layerGroup([]).addTo(map);
 
         var data = [];
