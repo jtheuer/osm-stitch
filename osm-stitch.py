@@ -79,7 +79,7 @@ def process_feature(feature):
     node_id = properties['object_id']
     way_id = parse_way_id(properties['description'])
 
-    suggested_fix = fetch_current_state_from_osm(geometry['coordinates'], node_id, way_id)
+    suggested_fix = fetch_current_state_from_osm(geometry['coordinates'], node_id, way_id, properties['schema'], properties['error_id'])
     return {
         'node_id': node_id,
         'way_id': way_id,
@@ -97,7 +97,7 @@ def prepare_data():
     seen = set()
     filtered = []
     for result in results:
-        if result['suggested_fix']:
+        if 'deduplication_info' in result['suggested_fix']:
             dedup = result['suggested_fix']['deduplication_info']
             if dedup in seen:
                 continue
@@ -121,25 +121,25 @@ def quickfix():
 
             for nd in way.get('nd', []):
                 if nd['@ref'] == fix['current_node_id']:
-                    changeset = None
+                    changeset_id = None
                     if 'changeset' in session:
-                        changeset = session['changeset']
-                        response, content = client.request('https://api.openstreetmap.org/api/0.6/changeset/' + changeset, 'GET')
+                        changeset_id = session['changeset']
+                        response, content = client.request('https://api.openstreetmap.org/api/0.6/changeset/' + changeset_id, 'GET')
                         if response.status != 200 or xmltodict.parse(content)['osm']['changeset']['@open'] != 'true':
-                            changeset = None
+                            changeset_id = None
 
-                    if not changeset:
+                    if not changeset_id:
                         response, content = client.request('https://api.openstreetmap.org/api/0.6/changeset/create', 'PUT', changeset_template.encode())
                         if response.status == 200:
-                            changeset = content.decode()
-                            session['changeset'] = changeset
+                            changeset_id = content.decode()
+                            session['changeset'] = changeset_id
                         else:
                             return jsonify({'status': 'failed', 'reason': 'Unable to create changeset: ' + content.decode()})
                     # update way id
                     nd['@ref'] = fix['new_node_id']
 
                     # update version and changeset
-                    way['@changeset'] = changeset
+                    way['@changeset'] = changeset_id
                     del way['@user']
                     del way['@uid']
                     del way['@timestamp']
@@ -149,10 +149,15 @@ def quickfix():
 
                     response, content = client.request("https://api.openstreetmap.org/api/0.6/node/{}".format(fix['current_node_id']), 'GET')
                     if response.status == 200:
-                        node_delete_request = re.sub('changeset="\d+"', 'changeset="%s"' % changeset, content.decode())
+                        node_delete_request = re.sub('changeset="\d+"', 'changeset="%s"' % changeset_id, content.decode())
                         response, content = client.request("https://api.openstreetmap.org/api/0.6/node/{}".format(fix['current_node_id']), 'DELETE', node_delete_request.encode())
                         #print("%s, %s %d %s" % (response.request.method, response.url, response.status, response.text))
-                    return jsonify({'status':'success', 'changeset': changeset})
+
+
+                    # finally, mark as fixed in keepright.at database
+                    response = requests.post("https://www.keepright.at/comment.php?st=ignore_t&co=Fixed+with+osm-stitch+in+changeset+{}&schema={}&id={}".format(changeset_id, fix['schema_id'], fix['error_id']))
+                    print("%s %s [%d] %s" % (response.request.method, response.url, response.status_code, response.text if response.status_code != 200 else ""))
+                    return jsonify({'status':'success', 'changeset': changeset_id})
         return jsonify({'status': 'failed', 'reason': 'unknown fix type'})
 
 
@@ -202,7 +207,7 @@ def calculate_order(way0, way1, distance):
     return order
 
 
-def fetch_current_state_from_osm(point, node_id, way_id):
+def fetch_current_state_from_osm(point, node_id, way_id, schema_id, error_id):
     map_response = requests.get("http://api.openstreetmap.org/api/0.6/map.json?bbox={left},{bottom},{right},{top}".format(left=point[0] - OFFSET, bottom=point[1] - OFFSET, right=point[0] + OFFSET, top=point[1] + OFFSET))
     if map_response.status_code == 200:
         doc = xmltodict.parse(map_response.text, force_list=osm_xml_tags)['osm']
@@ -239,11 +244,12 @@ def fetch_current_state_from_osm(point, node_id, way_id):
                                 'order': calculate_order(way, way_of_node, min_distance),
                                 'payload': {
                                     'type': 'replace_node',
+                                    'schema_id': schema_id,
+                                    'error_id': error_id,
                                     'way_id': way_of_node['@id'],
                                     'way_version_expected': way_of_node['@version'],
                                     'current_node_id': node_id,
-                                    'new_node_id':  closest_ref['@id']
-                                },
+                                    'new_node_id':  closest_ref['@id']},
                                 'deduplication_info':  "{}/{}".format(*sorted([node_id, closest_ref['@id']]))
                                 }
     else:

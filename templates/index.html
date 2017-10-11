@@ -59,7 +59,7 @@
         <span><a href="https://github.com/jtheuer/osm-stitch">project on github</a></span>
     </form>
 </div>
-<div id="start">Press "Start new round" ...</div>
+<div id="start">Press <strong>Start new round</strong> to load a new set of bugs to fix!</div>
 <div id="map" style="visibility: hidden"></div>
 <script>
 
@@ -108,9 +108,8 @@
         };
 
         var load_next = function() {
-
             if(data_index >= data.length) {
-                return;
+                return; // illegal state, ignore
             }
             data_index++;
             layers.clearLayers();
